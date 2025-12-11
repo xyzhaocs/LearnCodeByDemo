@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>2D 机械臂逆运动学 Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #202233 0, #050509 60%);
+      color: #f4f4f4;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .shell {
+      display: flex;
+      gap: 24px;
+      padding: 24px;
+      border-radius: 24px;
+      background: rgba(9, 9, 20, 0.9);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      max-width: 1200px;
+      width: 95vw;
+    }
+
+    .canvas-wrapper {
+      padding: 16px;
+      border-radius: 20px;
+      background: radial-gradient(circle at top left, #252535, #101018);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+      flex: 1 1 auto;
+      min-width: 480px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 16px;
+      background: #050509;
+    }
+
+    .panel {
+      width: 260px;
+      flex: 0 0 auto;
+      padding: 18px 18px 16px;
+      border-radius: 18px;
+      background: rgba(18, 18, 30, 0.95);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(16px);
+    }
+
+    .panel h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+
+    .panel .subtitle {
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: #a6a8c0;
+    }
+
+    .panel-section {
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .panel-section:last-of-type {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .field {
+      margin-bottom: 10px;
+    }
+
+    .field label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #cfd1f3;
+    }
+
+    .field small {
+      color: #8183a0;
+      font-size: 11px;
+    }
+
+    input[type="number"],
+    input[type="range"] {
+      width: 100%;
+      accent-color: #ff6b4a;
+    }
+
+    input[type="number"] {
+      padding: 4px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(10, 10, 20, 0.95);
+      color: #f4f4f4;
+      font-size: 12px;
+    }
+
+    .length-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .length-row input[type="range"] {
+      flex: 1;
+    }
+
+    .length-row input[type="number"] {
+      width: 64px;
+      text-align: right;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    button {
+      flex: 1;
+      border-radius: 999px;
+      border: none;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      background: linear-gradient(135deg, #ff7a4e, #ff4b6b);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(255, 90, 80, 0.45);
+      transition: transform 0.08s ease, box-shadow 0.08s ease,
+        background 0.15s ease;
+    }
+
+    button.secondary {
+      background: rgba(40, 40, 70, 0.95);
+      box-shadow: none;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(255, 90, 80, 0.55);
+    }
+
+    button.secondary:hover {
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6);
+    }
+
+    .status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #8789ab;
+      line-height: 1.4;
+    }
+
+    .status span {
+      color: #ff8a5a;
+      font-weight: 500;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        flex-direction: column;
+      }
+
+      .panel {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="canvas-wrapper">
+      <canvas id="ikCanvas" width="800" height="450"></canvas>
+    </div>
+
+    <div class="panel">
+      <h1>2D IK Arm</h1>
+      <div class="subtitle">鼠标控制红球目标 · 可配置 DOF 和连杆长度</div>
+
+      <div class="panel-section">
+        <div class="field">
+          <label>
+            <span>关节数 (DOF)</span>
+            <small>2 – 8</small>
+          </label>
+          <input type="number" id="jointCount" min="2" max="8" value="4" />
+        </div>
+        <div class="field">
+          <label>
+            <span>每帧迭代次数</span>
+            <small id="iterLabel">12</small>
+          </label>
+          <input type="range" id="iterationsPerFrame" min="1" max="32" value="12" />
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="field">
+          <label>
+            <span>连杆长度 (px)</span>
+            <small>影响整体可达范围</small>
+          </label>
+        </div>
+        <div id="lengthControls"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="btn-row">
+          <button id="resetPoseBtn">重置姿态</button>
+          <button class="secondary" id="randomTargetBtn">随机目标</button>
+        </div>
+        <div class="status" id="status">
+          状态：<span>等待鼠标移动...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- 基本设置 ---
+    const canvas = document.getElementById("ikCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const jointCountInput = document.getElementById("jointCount");
+    const lengthControlsContainer = document.getElementById("lengthControls");
+    const iterationsSlider = document.getElementById("iterationsPerFrame");
+    const iterLabel = document.getElementById("iterLabel");
+    const statusEl = document.getElementById("status");
+    const resetPoseBtn = document.getElementById("resetPoseBtn");
+    const randomTargetBtn = document.getElementById("randomTargetBtn");
+
+    let base = {
+      x: canvas.width * 0.5,
+      y: canvas.height * 0.85,
+    };
+
+    let jointCount = parseInt(jointCountInput.value, 10);
+    let lengths = [];
+    let angles = [];
+    let restAngles = [];
+    let jointPositions = [];
+    let target = { x: canvas.width * 0.3, y: canvas.height * 0.4 };
+    let iterationsPerFrame = parseInt(iterationsSlider.value, 10);
+
+    const IK_EPS = 0.6;
+
+    // --- 初始化 / UI 构造 ---
+    function initArm(resetTarget = false) {
+      jointCount = Math.min(
+        Math.max(parseInt(jointCountInput.value, 10) || 2, 2),
+        8
+      );
+      jointCountInput.value = jointCount;
+
+      const reach = canvas.height * 0.4;
+      const defaultLen = (reach / jointCount) * 1.05;
+
+      lengths = new Array(jointCount)
+        .fill(0)
+        .map((_, i) => (lengths[i] ? lengths[i] : defaultLen));
+
+      restAngles = new Array(jointCount).fill(-Math.PI / (jointCount + 1));
+      angles = restAngles.slice();
+      jointPositions = new Array(jointCount + 1).fill(null).map(() => ({
+        x: 0,
+        y: 0,
+      }));
+
+      buildLengthControls();
+
+      if (resetTarget) {
+        target = { x: canvas.width * 0.3, y: canvas.height * 0.4 };
+      }
+
+      updateStatus();
+    }
+
+    function buildLengthControls() {
+      lengthControlsContainer.innerHTML = "";
+      lengths.forEach((len, idx) => {
+        const row = document.createElement("div");
+        row.className = "length-row";
+
+        const range = document.createElement("input");
+        range.type = "range";
+        range.min = "20";
+        range.max = "200";
+        range.value = len.toFixed(0);
+        range.dataset.index = idx;
+
+        const num = document.createElement("input");
+        num.type = "number";
+        num.value = len.toFixed(0);
+        num.min = "10";
+        num.max = "400";
+        num.dataset.index = idx;
+
+        range.addEventListener("input", (e) => {
+          const i = parseInt(e.target.dataset.index, 10);
+          const v = parseFloat(e.target.value);
+          lengths[i] = v;
+          num.value = v.toFixed(0);
+        });
+
+        num.addEventListener("input", (e) => {
+          const i = parseInt(e.target.dataset.index, 10);
+          let v = parseFloat(e.target.value);
+          if (!isFinite(v)) return;
+          v = Math.min(Math.max(v, 10), 400);
+          lengths[i] = v;
+          range.value = v.toFixed(0);
+        });
+
+        row.appendChild(range);
+        row.appendChild(num);
+        lengthControlsContainer.appendChild(row);
+      });
+    }
+
+    // --- 前向运动学 ---
+    function forwardKinematics() {
+      jointPositions[0].x = base.x;
+      jointPositions[0].y = base.y;
+      let accAngle = -Math.PI / 2; // 让默认姿态朝上
+
+      for (let i = 0; i < jointCount; i++) {
+        accAngle += angles[i];
+        const prev = jointPositions[i];
+        const curr = jointPositions[i + 1];
+        curr.x = prev.x + Math.cos(accAngle) * lengths[i];
+        curr.y = prev.y + Math.sin(accAngle) * lengths[i];
+      }
+    }
+
+    // --- FABRIK inverse kinematics ---
+    function solveIK(iterations) {
+      const totalLength = lengths.reduce((a, b) => a + b, 0);
+      const distToTarget = distance(base, target);
+      const reachable = distToTarget <= totalLength + 1e-3;
+
+      if (!reachable) {
+        // 如果不可达，拉伸到目标方向
+        const dirX = (target.x - base.x) / distToTarget;
+        const dirY = (target.y - base.y) / distToTarget;
+        let currentX = base.x;
+        let currentY = base.y;
+        for (let i = 0; i < jointCount; i++) {
+          jointPositions[i].x = currentX;
+          jointPositions[i].y = currentY;
+          currentX += dirX * lengths[i];
+          currentY += dirY * lengths[i];
+        }
+        jointPositions[jointCount].x = currentX;
+        jointPositions[jointCount].y = currentY;
+        return false;
+      }
+
+      // 初始化关节位置
+      forwardKinematics();
+      const originalPositions = jointPositions.map(p => ({ x: p.x, y: p.y }));
+
+      for (let iter = 0; iter < iterations; iter++) {
+        // Backward pass: 从末端到基座
+        jointPositions[jointCount].x = target.x;
+        jointPositions[jointCount].y = target.y;
+        for (let i = jointCount - 1; i >= 0; i--) {
+          const r = distance(jointPositions[i], jointPositions[i + 1]);
+          const lambda = lengths[i] / r;
+          jointPositions[i].x = (1 - lambda) * jointPositions[i + 1].x + lambda * jointPositions[i].x;
+          jointPositions[i].y = (1 - lambda) * jointPositions[i + 1].y + lambda * jointPositions[i].y;
+        }
+
+        // Forward pass: 从基座到末端
+        jointPositions[0].x = base.x;
+        jointPositions[0].y = base.y;
+        for (let i = 0; i < jointCount; i++) {
+          const r = distance(jointPositions[i], jointPositions[i + 1]);
+          const lambda = lengths[i] / r;
+          jointPositions[i + 1].x = (1 - lambda) * jointPositions[i].x + lambda * jointPositions[i + 1].x;
+          jointPositions[i + 1].y = (1 - lambda) * jointPositions[i].y + lambda * jointPositions[i + 1].y;
+        }
+
+        // 检查收敛
+        const end = jointPositions[jointCount];
+        if (Math.hypot(target.x - end.x, target.y - end.y) < IK_EPS) break;
+      }
+
+      // 更新角度（从位置计算）
+      updateAnglesFromPositions();
+      return reachable;
+    }
+
+    function updateAnglesFromPositions() {
+      let accAngle = -Math.PI / 2;
+      for (let i = 0; i < jointCount; i++) {
+        const dx = jointPositions[i + 1].x - jointPositions[i].x;
+        const dy = jointPositions[i + 1].y - jointPositions[i].y;
+        const angle = Math.atan2(dy, dx);
+        angles[i] = angle - accAngle;
+        accAngle = angle;
+      }
+    }
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function wrapAngle(angle) {
+      if (!Number.isFinite(angle)) return 0;
+      while (angle > Math.PI) angle -= Math.PI * 2;
+      while (angle < -Math.PI) angle += Math.PI * 2;
+      return angle;
+    }
+
+    // --- 绘制 ---
+    function drawScene() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 背景渐变
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, "#070712");
+      grad.addColorStop(1, "#030308");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 地面线
+      ctx.strokeStyle = "rgba(200,200,220,0.35)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(40, base.y + 0.5);
+      ctx.lineTo(canvas.width - 40, base.y + 0.5);
+      ctx.stroke();
+
+      // 目标点
+      const totalLength = lengths.reduce((a, b) => a + b, 0);
+      const reachable = distance(base, target) <= totalLength + 1e-3;
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, 9, 0, Math.PI * 2);
+      ctx.fillStyle = reachable ? "#ff6b4a" : "#7540ff";
+      ctx.shadowColor = reachable ? "#ff6b4a" : "#7540ff";
+      ctx.shadowBlur = 14;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // 机械臂
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#fdfdfd";
+      ctx.beginPath();
+      ctx.moveTo(jointPositions[0].x, jointPositions[0].y);
+      for (let i = 1; i <= jointCount; i++) {
+        ctx.lineTo(jointPositions[i].x, jointPositions[i].y);
+      }
+      ctx.stroke();
+
+      // 关节节点
+      for (let i = 0; i <= jointCount; i++) {
+        const p = jointPositions[i];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, i === jointCount ? 5 : 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(0,0,0,0.75)";
+        ctx.stroke();
+      }
+    }
+
+    // --- 交互 ---
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
+      const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+      target.x = x;
+      target.y = y;
+      updateStatus();
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      updateStatus("鼠标离开画布，可点击“随机目标”查看运动。");
+    });
+
+    jointCountInput.addEventListener("change", () => {
+      initArm(false);
+    });
+
+    iterationsSlider.addEventListener("input", (e) => {
+      iterationsPerFrame = parseInt(e.target.value, 10) || 1;
+      iterLabel.textContent = iterationsPerFrame;
+    });
+
+    resetPoseBtn.addEventListener("click", () => {
+      angles = restAngles.slice();
+      updateStatus("已重置姿态。");
+    });
+
+    randomTargetBtn.addEventListener("click", () => {
+      // 在可达范围内随机一点
+      const totalLength = lengths.reduce((a, b) => a + b, 0);
+      const r = Math.random() * totalLength * 0.9;
+      const theta = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.2;
+      target.x = base.x + r * Math.cos(theta);
+      target.y = base.y + r * Math.sin(theta);
+      updateStatus("已随机生成目标点。");
+    });
+
+    function updateStatus(extra) {
+      const totalLength = lengths.reduce((a, b) => a + b, 0);
+      const dist = distance(base, target);
+      const reachable = dist <= totalLength + 1e-3;
+      const reachText = reachable ? "可达" : "不可达（目标超出机械臂最大伸展长度）";
+      const extraText = extra ? " " + extra : "";
+      statusEl.innerHTML =
+        '状态：<span>' +
+        reachText +
+        "</span> · 基座到目标距离 " +
+        dist.toFixed(1) +
+        " px" +
+        extraText;
+    }
+
+    // --- 动画循环 ---
+    function loop() {
+      const reachable = solveIK(iterationsPerFrame);
+      drawScene();
+      requestAnimationFrame(loop);
+    }
+
+    // 初始化并启动
+    initArm(true);
+    forwardKinematics();
+    updateStatus();
+    loop();
+  </script>
+</body>
+
+</html>
